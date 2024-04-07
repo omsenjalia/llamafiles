@@ -1,0 +1,100 @@
+name: Daily Llamafile Update (Multi-Repo)
+
+on:
+  schedule:
+    - cron:  '0 0 * * *'  # Runs every day at 12 AM
+  workflow_dispatch: 
+
+jobs:
+  update-llamafiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Define repositories
+        id: define_repos
+        run: |
+          # Define repositories as comma-separated values
+          # Example: REPOSITORIES="huggingface/repo1,your-org/repo2"
+          REPOSITORIES="Qwen/Qwen1.5-MoE-A2.7B"
+          echo "::set-output name=REPOSITORIES::$REPOSITORIES"
+
+      - name: Fetch latest commits with .gguf files (per repository)
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const octokit = require('@octokit/rest');
+            const github = new octokit({ token: core.secrets.GITHUB_TOKEN });
+            const repos = core.getInput('REPOSITORIES').split(',');
+
+            async function getCommits(repo) {
+              const [owner, repoName] = repo.split('/');
+              const { data: commits } = await github.repos.listCommits({
+                owner,
+                repo: repoName,
+                sha: 'master',  # You can also specify a specific branch if needed
+              });
+              return commits.filter(commit => commit.sha.endsWith('.gguf'));
+            }
+
+            async function main() {
+              const allCommits = [];
+              for (const repo of repos) {
+                const commits = await getCommits(repo);
+                allCommits.push(...commits);
+              }
+              core.setOutput('commits', JSON.stringify(allCommits));
+            }
+
+            main().catch(error => core.setFailed(error.message));
+
+      - id: get_commits
+        uses: dummy/export-variable@v1
+        with:
+          name: 'COMMITS'
+          value: ${{ steps.fetch-latest-commits.outputs.commits }}
+
+      - name: Download .gguf files (per repository)
+        uses: actions/download-artifact@v3
+        with:
+          name: ${{ jsonPath(steps.get_commits.outputs.COMMITS, '$[*]') }}  # Download artifacts from all commits
+
+      - name: Convert .gguf files to llamafiles and organize in folders
+        run: |
+          today=$(date +"%d-%m-%Y")
+
+          for commit in ${{ jsonPath(steps.get_commits.outputs.COMMITS, '$[*]') }}; do
+              # Extract repository name from commit object (replace with your logic if needed)
+              repo_name=$(echo $commit | cut -d'/' -f2)
+              mkdir -p "$today/$repo_name"
+
+              for file in ./gguf_files/$commit/*.gguf; do
+                  filename=$(basename "$file")
+                  llamafile_name="${filename%.gguf}.llamafile"
+
+                  # Add your conversion logic here to convert $file to $llamafile_name
+                  zipalign -j0 \
+                    $llamafile_file \
+                    $filename
+
+                  mv $llamafile_name "$today/$repo_name"
+              done
+          done
+
+     # - name: Delete old llamafiles (optional)
+      #  run: |
+     #     rm -rf *  # Delete all llamafiles outside of the newly created folders
+
+      - name: Commit changes (optional)
+        uses: actions/checkout@v3
+
+      - name: Add and commit changes
+        run: |
+          git add .
+          git commit -m "Update llamafiles from latest commits on $today"
+
+      - name: Push changes (optional)
+        uses: ad-actions/push@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          branch: master
