@@ -3,7 +3,7 @@ name: Daily Llamafile Update (Multi-Repo)
 on:
   schedule:
     - cron:  '0 0 * * *'  # Runs every day at 12 AM
-  workflow_dispatch: 
+  workflow_dispatch:  # Enables manual triggering
 
 jobs:
   update-llamafiles:
@@ -11,15 +11,29 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Define repositories
+      - name: Define repositories (optional)
         id: define_repos
+        if: github.event.inputs.repos == ''
         run: |
-          # Define repositories as comma-separated values
+          # Define repositories as comma-separated values (optional)
           # Example: REPOSITORIES="huggingface/repo1,your-org/repo2"
           REPOSITORIES="Qwen/Qwen1.5-MoE-A2.7B"
+          echo "::set-output name=REPOSITORIES::${{ secrets.REPOSITORIES }}"
+
+      - name: Define repositories from workflow dispatch
+        id: define_repos_dispatch
+        if: steps.define_repos.outputs.REPOSITORIES == ''
+        run: |
+          REPOSITORIES=${{ github.event.inputs.repos }}
           echo "::set-output name=REPOSITORIES::$REPOSITORIES"
 
-      - name: Fetch latest commits with .gguf files (per repository)
+      - uses: actions/toolkit@v3  # Include action for jsonPath functionality
+
+      - name: Install zipalign
+        run: |
+          sudo apt-get update && sudo apt-get install zipalign
+
+      - name: Fetch latest commits with .gguf files
         uses: actions/github-script@v6
         with:
           script: |
@@ -54,36 +68,31 @@ jobs:
           name: 'COMMITS'
           value: ${{ steps.fetch-latest-commits.outputs.commits }}
 
-      - name: Download .gguf files (per repository)
+      - name: Download .gguf files
         uses: actions/download-artifact@v3
         with:
-          name: ${{ jsonPath(steps.get_commits.outputs.COMMITS, '$[*]') }}  # Download artifacts from all commits
+          name: ${{ steps.get_commits.outputs.COMMITS | jsonPath ('$[*]') }}
 
-      - name: Convert .gguf files to llamafiles and organize in folders
+      - name: Convert .gguf files to llamafiles
         run: |
           today=$(date +"%d-%m-%Y")
 
-          for commit in ${{ jsonPath(steps.get_commits.outputs.COMMITS, '$[*]') }}; do
-              # Extract repository name from commit object (replace with your logic if needed)
-              repo_name=$(echo $commit | cut -d'/' -f2)
+          for commit in ${{ steps.get_commits.outputs.COMMITS | jsonPath ('$[*]') }}; do
+              repo_name=$(echo "$commit" | cut -d'/' -f2)
               mkdir -p "$today/$repo_name"
 
               for file in ./gguf_files/$commit/*.gguf; do
                   filename=$(basename "$file")
                   llamafile_name="${filename%.gguf}.llamafile"
 
-                  # Add your conversion logic here to convert $file to $llamafile_name
-                  zipalign -j0 \
-                    $llamafile_file \
-                    $filename
-
-                  mv $llamafile_name "$today/$repo_name"
+                  zipalign -j0 "$file" "$llamafile_name"
+                  mv "$llamafile_name" "$today/$repo_name"
               done
           done
 
-     # - name: Delete old llamafiles (optional)
-      #  run: |
-     #     rm -rf *  # Delete all llamafiles outside of the newly created folders
+      - name: Delete old llamafiles (optional)
+        run: |
+          rm -rf *  # Delete all llamafiles outside of the newly created folders
 
       - name: Commit changes (optional)
         uses: actions/checkout@v3
@@ -96,5 +105,5 @@ jobs:
       - name: Push changes (optional)
         uses: ad-actions/push@v1
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           branch: master
