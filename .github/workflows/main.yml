@@ -71,7 +71,8 @@ jobs:
       - name: Download .gguf files
         uses: actions/download-artifact@v3
         with:
-          name: ${{ steps.get_commits.outputs.COMMITS | jsonPath ('$[*]') }}
+          name: ${{ steps.get_commits.outputs.COMMITS }}  # Remove the jsonPath call
+
 
       - name: Convert .gguf files to llamafiles
         run: |
