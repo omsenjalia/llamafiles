@@ -16,7 +16,6 @@ jobs:
         if: github.event.inputs.repos == ''
         run: |
           # Define repositories as comma-separated values (optional)
-          # Example: REPOSITORIES="huggingface/repo1,your-org/repo2"
           REPOSITORIES="Qwen/Qwen1.5-MoE-A2.7B"
           echo "::set-output name=REPOSITORIES::${{ secrets.REPOSITORIES }}"
 
@@ -26,8 +25,6 @@ jobs:
         run: |
           REPOSITORIES=${{ github.event.inputs.repos }}
           echo "::set-output name=REPOSITORIES::$REPOSITORIES"
-
-      - uses: actions/toolkit@v3  # Include action for jsonPath functionality
 
       - name: Install zipalign
         run: |
@@ -62,16 +59,14 @@ jobs:
 
             main().catch(error => core.setFailed(error.message));
 
-      - id: get_commits
-        uses: dummy/export-variable@v1
-        with:
-          name: 'COMMITS'
-          value: ${{ steps.fetch-latest-commits.outputs.commits }}
+      - name: Set COMMITS variable
+        run: |
+          echo "::set-output name=COMMITS::${{ steps.fetch-latest-commits.outputs.commits }}"
 
       - name: Download .gguf files
         uses: actions/download-artifact@v3
         with:
-          name: ${{ steps.get_commits.outputs.COMMITS }}  # Remove jsonPath call
+          name: ${{ steps.get_commits.outputs.COMMITS }}  # No jsonPath call
 
       - name: Convert .gguf files to llamafiles
         run: |
@@ -102,8 +97,10 @@ jobs:
           git add .
           git commit -m "Update llamafiles from latest commits on $today"
 
+      # Consider using actions/checkout@v3 for pushing if needed (replace with your preferred push command)
       - name: Push changes (optional)
-        uses: ad-actions/push@v1
+        uses: actions/checkout@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: master
+          fetch: true  # Optional, fetch latest changes before pushing
+        run: |
+          git push origin master  # Replace with your branch name if needed
