@@ -71,14 +71,13 @@ jobs:
       - name: Download .gguf files
         uses: actions/download-artifact@v3
         with:
-          name: ${{ steps.get_commits.outputs.COMMITS }}  # Remove the jsonPath call
-
+          name: ${{ steps.get_commits.outputs.COMMITS }}  # Remove jsonPath call
 
       - name: Convert .gguf files to llamafiles
         run: |
           today=$(date +"%d-%m-%Y")
 
-          for commit in ${{ steps.get_commits.outputs.COMMITS | jsonPath ('$[*]') }}; do
+          for commit in ${{ steps.get_commits.outputs.COMMITS }}; do
               repo_name=$(echo "$commit" | cut -d'/' -f2)
               mkdir -p "$today/$repo_name"
 
