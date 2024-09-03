@@ -65,7 +65,7 @@ jobs:
           echo "::set-output name=COMMITS::${{ steps.fetch-latest-commits.outputs.commits }}"
 
       - name: Download .gguf files
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4.1.7
         with:
           name: ${{ steps.get_commits.outputs.COMMITS }}  # No jsonPath call
 
